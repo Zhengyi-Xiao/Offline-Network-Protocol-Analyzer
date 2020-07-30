@@ -5,6 +5,8 @@ Created on Thu Jul 23 21:42:07 2020
 
 @author: Zhengyi Xiao
 """
+import sys
+
 EthernetFields=['Destination','Source','Type']
 IPv4Fields=['Version','Header Length','Differentiated Services Fields:','Totoal Length','Identifier','Flags:','Fragment Offset','Time To Live','Protocol','Header checksum','Source IP Address','Destination IP Address']
 ECNField=['Not-ECT','ECT(1)','ECT(0)','CE']
@@ -15,12 +17,43 @@ tcpFields=['Source Port','Destination Port','Sequence Number','Acknowledgment nu
 tcpOptions=['End of Option List','No-Operation','Maximum Segment Size:','Window Scale:','SACK Permitted:','SACK:','Echo:','Echo Reply','Time Stamp Option:','Partial Order Connection Permitted:','Partial Order Service Profile:','CC','CC.New','CC.EECHO','TCP Alternative Checksum Request:','TCP Alternative Checksum Data:']
 Option14=['TCP checksum','8-bit Fletcher\'s algorithm','16-bit Fletcher\'s algorithm','Redundant Checksum Avoidance']
 
-## convertFormat
-def convertFormat(fr):
-    for i in fr:
-        if(len(i)>2):
-            fr.remove(i)
-    return fr
+def frameAnalyzer(lines):
+    frame=list()
+    for i in range(len(lines)):
+        line=lines[i].split()
+        # if the leading is not a offset, the line will be ignored.
+        if(len(line[0])<2):
+            continue
+        # find the offset of current line by subtracting the next offset from the current
+        if(not i==len(lines)-1):
+            nextLineOffset=int(lines[i+1].split()[0],16)
+            offset=nextLineOffset-int(line[0],16)
+        else:
+            offset=len(line)
+        # if the length of the line smaller than expected and it is not the
+        # last line of a trace, then it is a currupted line and exit the program.
+        if(len(line[1:])<offset and not i==(len(lines)-1)):
+            sys.exit('Error: Corrupted Line ('+str(line[0])+')')
+        frame=frame+line[1:offset+1]
+
+    for i in range(len(frame)):
+        frame[i]=frame[i].lower()
+    return frame
+
+def traceAnalyzer(lines):
+    frame=list()
+    for line in lines:
+        line=line.split()
+        if(len(line)==0):
+            continue
+        try:
+            offset=int(line[0],16)
+            if(offset==0):
+                frame.append([])
+        except ValueError:
+            continue
+        frame[-1].append(' '.join(line))
+    return frame
 
 def EthernetHandler(frame):
     EthernetHeader=['**************** Ethernet II ***************']
@@ -76,7 +109,7 @@ def IPv4Handler(packet):
     count=20
     #if(packet[count]=='00'):
     #if(packet[count]=='01'):
-    # Record Route(RR) 
+    # Record Route(RR)
     if(packet[count]=='07'):
         options.append(IPv4Options[2])
         options.append(['Length: 0x'+str(packet[21])+' ('+str(int(packet[21],16))+')'])
@@ -218,29 +251,36 @@ def print_list(header):
     print()
 
 def main():
-    f = open("http.txt", "r")
-    frame = convertFormat(f.read().split())
+    f = open("test.txt", "r")
+    trace=f.readlines()
     f.close()
-    
-    ## Ethernet Layer
-    header=EthernetHandler(frame)
-    print_list(header)
 
-    ## IP Layer
-    packet=frame[14:]
-    header,protocol,lenHeader = IPHandler(packet)
-    print_list(header)
+    frames=traceAnalyzer(trace)
 
-    ## Transport Layer
-    segment=packet[lenHeader:]
-    header,lenHeader=transportHandler(segment,protocol)
-    print_list(header)
+    for i in range(len(frames)):
+        print('PACKT: '+str(i+1))
+        frame=frameAnalyzer(frames[i])
 
-    ## Application Layer
-    data=segment[lenHeader:]
-    if(len(data)>0):
-        header=httpHandler(data)
+        ## Ethernet Layer
+        header=EthernetHandler(frame)
         print_list(header)
+
+        ## IP Layer
+        packet=frame[14:]
+        header,protocol,lenHeader = IPHandler(packet)
+        print_list(header)
+
+        ## Transport Layer
+        segment=packet[lenHeader:]
+        header,lenHeader=transportHandler(segment,protocol)
+        print_list(header)
+
+        ## Application Layer
+        data=segment[lenHeader:]
+        if(len(data)>0):
+            header=httpHandler(data)
+            print_list(header)
+
 
 if __name__ == "__main__":
     main()
