@@ -6,7 +6,9 @@ Created on Thu Jul 23 21:42:07 2020
 @author: Zhengyi Xiao
 """
 import sys
-from multiprocessing import Pool
+import os
+
+from multiprocessing import Process, Lock, Pool, Value
 
 EthernetFields=['Destination','Source','Type']
 IPv4Fields=['Version','Header Length','Differentiated Services Fields:','Totoal Length','Identifier','Flags:','Fragment Offset','Time To Live','Protocol','Header checksum','Source IP Address','Destination IP Address']
@@ -55,6 +57,31 @@ def traceAnalyzer(lines):
             continue
         frame[-1].append(' '.join(line))
     return frame
+
+def interpreter(num,lock,frames):
+    frame=frameAnalyzer(frames)
+    ## Ethernet Layer
+    EthernetHeader=EthernetHandler(frame)
+
+    ## IP Layer
+    packet=frame[14:]
+    IPHeader,protocol,lenHeader,lenPacket = IPHandler(packet)
+
+    ## Transport Layer
+    segment=packet[lenHeader:lenPacket]
+    TransportHeader,lenHeader=transportHandler(segment,protocol)
+
+    ## Application Layer
+    data=segment[lenHeader:]
+    APPheader=[]
+    if(len(data)>0):
+        APPheader=httpHandler(data)
+    lock.acquire()
+    print('PACKET: '+str(num.value))
+    num.value=num.value+1
+    header=EthernetHeader+IPHeader+TransportHeader+APPheader
+    print_list(header)
+    lock.release()
 
 def EthernetHandler(frame):
     EthernetHeader=['**************** Ethernet II ***************']
@@ -245,7 +272,10 @@ def print_list_helper(items, level=0):
                 indentation = '    ' * level + '\_ '
             else:
                 indentation = '__ '
-            print('%s%s' % (indentation, item))
+            if(item[0] == '*'):
+                print('%s%s' % ('', item))
+            else:
+                print('%s%s' % (indentation, item))
 
 def print_list(header):
     print(header[0])
@@ -266,29 +296,11 @@ def main():
     f.close()
 
     frames=traceAnalyzer(trace)
-    for i in range(len(frames)):
-        print('PACKET: '+str(i+1))
-        frame=frameAnalyzer(frames[i])
 
-        ## Ethernet Layer
-        header=EthernetHandler(frame)
-        print_list(header)
+    lock = Lock()
+    num = Value('i', 0)
+    for frame in frames:
+        Process(target=interpreter, args=(num,lock, frame)).start()
 
-        ## IP Layer
-        packet=frame[14:]
-        header,protocol,lenHeader,lenPacket = IPHandler(packet)
-        print_list(header)
-
-        ## Transport Layer
-        segment=packet[lenHeader:lenPacket]
-        header,lenHeader=transportHandler(segment,protocol)
-        print_list(header)
-
-        ## Application Layer
-        data=segment[lenHeader:]
-        if(len(data)>0):
-            header=httpHandler(data)
-            print_list(header)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
