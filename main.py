@@ -6,6 +6,7 @@ Created on Thu Jul 23 21:42:07 2020
 @author: Zhengyi Xiao
 """
 import sys
+from multiprocessing import Pool
 
 EthernetFields=['Destination','Source','Type']
 IPv4Fields=['Version','Header Length','Differentiated Services Fields:','Totoal Length','Identifier','Flags:','Fragment Offset','Time To Live','Protocol','Header checksum','Source IP Address','Destination IP Address']
@@ -21,7 +22,7 @@ def frameAnalyzer(lines):
     frame=list()
     for i in range(len(lines)):
         line=lines[i].split()
-        # if the leading is not a offset, the line will be ignored.
+        # if the leading is not an offset, the line will be ignored.
         if(len(line[0])<2):
             continue
         # find the offset of current line by subtracting the next offset from the current
@@ -44,7 +45,7 @@ def traceAnalyzer(lines):
     frame=list()
     for line in lines:
         line=line.split()
-        if(len(line)==0):
+        if(len(line)<=1):
             continue
         try:
             offset=int(line[0],16)
@@ -83,6 +84,7 @@ def IPv4Handler(packet):
     IPHeader.append(['Congestion Notification'+': '+str(bin((int(packet[1],16)<<6&255)>>6)[2:])+' ('+ECNField[(int(packet[1],16)<<6&255)>>6] +')'])
 
     IPHeader.append(IPv4Fields[3]+': 0x'+str(''.join(packet[2:4]))+' ('+str(int(''.join(packet[2:4]),16))+' bytes)')
+    lenPacket=int(''.join(packet[2:4]),16)
     IPHeader.append(IPv4Fields[4]+': 0x'+str(''.join(packet[4:6]))+' ('+str(int(''.join(packet[4:6]),16))+')')
     IPHeader.append(IPv4Fields[5])
     bitWise=bin(int(''.join(packet[6:8]),16))[2:].zfill(16)
@@ -102,7 +104,7 @@ def IPv4Handler(packet):
     IPHeader.append(IPv4Fields[11]+': '+str(':'.join(packet[16:20]))+' ('+str(int(packet[16],16))+'.'+str(int(packet[17],16))+'.'+str(int(packet[18],16))+'.'+str(int(packet[19],16))+')')
 
     if(lenHeader == 20):
-        return IPHeader,protocol,lenHeader
+        return IPHeader,protocol,lenHeader,lenPacket
     #IPv4 options
     IPHeader.append('Option(s)')
     options=list()
@@ -126,7 +128,7 @@ def IPv4Handler(packet):
     #if(packet[count]=='83'):
     #if(packet[count]=='89'):
     IPHeader.append(options)
-    return IPHeader,protocol,lenHeader
+    return IPHeader,protocol,lenHeader,lenPacket
 
 def IPv6Handler(packet):
     IPHeader=['****** Internet Protocol Version 6 *********']
@@ -251,14 +253,21 @@ def print_list(header):
     print()
 
 def main():
-    f = open("test.txt", "r")
+    try:
+        if(len(sys.argv)==2):
+            f = open(str(sys.argv[1]), 'r')
+        else:
+            print('The name of the trace file(with .txt): ',end='')
+            userInput=input()
+            f = open(userInput, 'r')
+    except FileNotFoundError:
+        sys.exit('File does not exist!')
     trace=f.readlines()
     f.close()
 
     frames=traceAnalyzer(trace)
-
     for i in range(len(frames)):
-        print('PACKT: '+str(i+1))
+        print('PACKET: '+str(i+1))
         frame=frameAnalyzer(frames[i])
 
         ## Ethernet Layer
@@ -267,11 +276,11 @@ def main():
 
         ## IP Layer
         packet=frame[14:]
-        header,protocol,lenHeader = IPHandler(packet)
+        header,protocol,lenHeader,lenPacket = IPHandler(packet)
         print_list(header)
 
         ## Transport Layer
-        segment=packet[lenHeader:]
+        segment=packet[lenHeader:lenPacket]
         header,lenHeader=transportHandler(segment,protocol)
         print_list(header)
 
@@ -280,7 +289,6 @@ def main():
         if(len(data)>0):
             header=httpHandler(data)
             print_list(header)
-
 
 if __name__ == "__main__":
     main()
