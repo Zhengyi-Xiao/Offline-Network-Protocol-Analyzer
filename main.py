@@ -76,17 +76,21 @@ def interpreter(num,lock,frames):
     APPheader=[]
     if(len(data)>0):
         APPheader=httpHandler(data)
+
+    ## Combine all headers.=
+    header=EthernetHeader+IPHeader+TransportHeader+APPheader
+    
     lock.acquire()
     print('PACKET: '+str(num.value))
     num.value=num.value+1
-    header=EthernetHeader+IPHeader+TransportHeader+APPheader
     print_list(header)
+    write_list(num.value,header)
     lock.release()
 
 def EthernetHandler(frame):
     EthernetHeader=['**************** Ethernet II ***************']
-    EthernetHeader.append(EthernetFields[0]+': 0x'+str(':'.join(frame[0:6]))+' ('+str(int(frame[0],16))+'.'+str(int(frame[1],16))+'.'+str(int(frame[2],16))+'.'+str(int(frame[3],16))+'.'+str(int(frame[4],16))+'.'+str(int(frame[5],16))+')')
-    EthernetHeader.append(EthernetFields[1]+': 0x'+str(':'.join(frame[6:12]))+' ('+str(int(frame[6],16))+'.'+str(int(frame[7],16))+'.'+str(int(frame[8],16))+'.'+str(int(frame[9],16))+'.'+str(int(frame[10],16))+'.'+str(int(frame[11],16))+')')
+    EthernetHeader.append(EthernetFields[0]+': '+str(':'.join(frame[0:6]))+' ('+str(int(frame[0],16))+'.'+str(int(frame[1],16))+'.'+str(int(frame[2],16))+'.'+str(int(frame[3],16))+'.'+str(int(frame[4],16))+'.'+str(int(frame[5],16))+')')
+    EthernetHeader.append(EthernetFields[1]+': '+str(':'.join(frame[6:12]))+' ('+str(int(frame[6],16))+'.'+str(int(frame[7],16))+'.'+str(int(frame[8],16))+'.'+str(int(frame[9],16))+'.'+str(int(frame[10],16))+'.'+str(int(frame[11],16))+')')
     protocol=int(''.join(frame[12:14]),16)
     if(protocol==2048): #IPv4
         EthernetHeader.append(EthernetFields[2]+': 0x'+str(''.join(frame[12:14]))+' (IPv4)')
@@ -263,6 +267,28 @@ def httpHandler(data):
             return httpHeader
     return httpHeader
 
+def write_list_helper(f,items, level=0):
+    for item in items:
+        if isinstance(item, list):
+            write_list_helper(f,item,level + 1)
+        else:
+            if level != 0:
+                indentation = '    ' * level + '\_ '
+            else:
+                indentation = '__ '
+            if(item[0] == '*'):
+                f.write('%s%s\n' % ('', item))
+            else:
+                f.write('%s%s\n' % (indentation, item))
+
+def write_list(num,header):
+    f = open('result.txt', 'a')
+    f.write('PACKET: '+str(num)+'\n')
+    f.write(header[0]+'\n')
+    write_list_helper(f,header[1:],0)
+    f.write('\n')
+    f.close()
+
 def print_list_helper(items, level=0):
     for item in items:
         if isinstance(item, list):
@@ -283,6 +309,9 @@ def print_list(header):
     print()
 
 def main():
+    ## Ensure the output environment is clean
+    if os.path.exists("result.txt"):
+        os.remove("result.txt")
     try:
         if(len(sys.argv)==2):
             f = open(str(sys.argv[1]), 'r')
