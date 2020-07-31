@@ -16,4 +16,4 @@ http:
 	python3 main.py http.txt
 
 clean:
-	rm test.txt
+	rm result.txt
